@@ -1,0 +1,28 @@
+# Install pre-commit: pip install pre-commit
+# Install hooks:    pre-commit install
+# Run on all files: pre-commit run --all-files
+#
+# When running behind a proxy or from a mirror, set PRE_COMMIT_HOME
+# to a local directory to avoid fetching the remote tool registry.
+
+repos:
+  - repo: https://github.com/psf/black
+    rev: 24.10.0
+    hooks:
+      - id: black
+        args: [--line-length=100]
+        language_version: python3.12
+
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    # Ruff version --version
+    rev: v0.6.9
+    hooks:
+      - id: ruff
+        args: [--fix, --exit-non-zero-on-fix]
+
+  - repo: https://github.com/pre-commit/mirrors-mypy
+    rev: v1.11.2
+    hooks:
+      - id: mypy
+        args: [--ignore-missing-imports]
+        additional_dependencies: ["types-requests", "types-redis"]

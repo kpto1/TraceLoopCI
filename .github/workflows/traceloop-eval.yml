@@ -1,3 +1,15 @@
+# TraceLoop CI -- Dogfooding pattern
+#
+# This workflow requires a running TraceLoop CI instance to work. It is a
+# dogfooding check that runs LLM evaluation on PRs using the project's own
+# platform. TRACELOOP_API_URL, TRACELOOP_API_KEY, and TRACELOOP_DATASET_ID
+# secrets must be configured in the repository for this to function.
+#
+# If you do not have a TraceLoop CI instance deployed yet, disable this
+# workflow or comment out the eval job. The standard CI workflow
+# (ci.yml) handles unit tests, lint, and Docker build without external
+# dependencies.
+
 name: TraceLoop CI Check
 
 on:
