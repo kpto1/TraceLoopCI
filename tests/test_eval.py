@@ -78,14 +78,26 @@ class TestJsonEval:
         )
         assert result["passed"] is False
 
-    async def test_invalid_json_fails(self):
+    async def test_invalid_json_fails_when_schema_required(self):
         from app.services.evaluators.json_eval import evaluate
 
+        # When a schema is specified, invalid JSON still fails
         result = await evaluate(
-            {"expected_json_schema": None},
+            {"expected_json_schema": {"type": "object"}},
             'not valid json {{{',
         )
         assert result["passed"] is False
+
+    async def test_no_schema_skips_json_validation(self):
+        from app.services.evaluators.json_eval import evaluate
+
+        # When no schema is specified, non-JSON output should NOT fail
+        result = await evaluate(
+            {"expected_json_schema": None},
+            'this is plain text, not json',
+        )
+        assert result["passed"] is True
+        assert result["details"].get("skipped") is True
 
 
 class TestLLMJudge:
