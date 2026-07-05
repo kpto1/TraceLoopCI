@@ -187,7 +187,7 @@ pnpm install
 pnpm dev
 
 # 7. 浏览器打开
-open http://localhost:3000
+open http://localhost:8000
 ```
 
 ### 常用命令
