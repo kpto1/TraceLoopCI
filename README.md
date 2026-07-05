@@ -40,7 +40,7 @@ git clone https://github.com/kpto1/TraceLoopCI.git
 cd TraceLoopCI
 docker compose up -d
 # 等 10 秒等数据库初始化完
-open http://localhost:3000
+open http://localhost:8000
 ```
 
 首次启动自动建表。内置 Mock LLM 服务，不用真实 API Key 就能看到 Trace 列表和评测流程。
