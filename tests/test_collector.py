@@ -1,5 +1,4 @@
-import pytest
-from unittest.mock import AsyncMock, patch, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 
 class TestProxyLLMCall:
@@ -61,8 +60,9 @@ class TestProxyLLMCall:
         assert result["trace"]["user_input"] == "What is 2+2?"
 
     async def test_timeout_handled(self):
-        from app.services.trace_collector import proxy_llm_call
         import httpx
+
+        from app.services.trace_collector import proxy_llm_call
 
         mock_client = AsyncMock()
         mock_client.post.side_effect = httpx.TimeoutException("too slow")
@@ -85,11 +85,12 @@ class TestProxyLLMCall:
             'data: {"choices":[{"delta":{"content":"Hello"}}]}\n',
             'data: {"choices":[{"delta":{"content":" world"}}]}\n',
             'data: {"choices":[{"delta":{"content":"!"}}],"usage":{"total_tokens":8}}\n',
-            'data: [DONE]\n',
+            "data: [DONE]\n",
         ]
 
         class FakeStreamResp:
             status_code = 200
+
             async def aiter_lines(self):
                 for c in chunks:
                     yield c
@@ -97,6 +98,7 @@ class TestProxyLLMCall:
         class FakeCtxMgr:
             async def __aenter__(self):
                 return FakeStreamResp()
+
             async def __aexit__(self, *args):
                 pass
 

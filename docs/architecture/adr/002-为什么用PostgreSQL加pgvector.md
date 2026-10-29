@@ -1,3 +1,5 @@
+> 历史设计记录。当前已实现能力以 [架构概览](../overview.md) 和根 README 为准。
+
 # ADR 002: 为什么用 PostgreSQL + pgvector
 
 **日期**: 2026-06-28  

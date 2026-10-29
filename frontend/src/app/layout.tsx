@@ -9,11 +9,12 @@ export const metadata: Metadata = {
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en">
+    <html lang="zh-CN">
       <body>
         <nav>
           <Link href="/" className="brand">TraceLoop CI</Link>
           <Link href="/traces">Traces</Link>
+          <Link href="/datasets">数据集与评测</Link>
         </nav>
         <main>{children}</main>
       </body>

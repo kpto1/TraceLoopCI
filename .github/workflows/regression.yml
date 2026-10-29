@@ -1,0 +1,60 @@
+name: Application regression
+on:
+  pull_request:
+    branches: [main]
+permissions:
+  contents: read
+jobs:
+  regression:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: candidate
+          ref: ${{ github.event.pull_request.head.sha }}
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}
+          path: baseline
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install -r candidate/requirements.lock
+      - name: Establish reviewed base behavior
+        shell: bash
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          cd candidate
+          if [ -f ../baseline/examples/regression_app.py ]; then
+            python -m app.cli --app-dir ../baseline --adapter examples.regression_app:answer --cases ../baseline/examples/regression_cases.json --revision "$BASE_SHA" --allow-mock-judge --output ../baseline-report.json
+          else
+            echo 'First adoption: no base adapter exists; only absolute checks run. Baseline comparison starts after merge.' >> "$GITHUB_STEP_SUMMARY"
+          fi
+      - name: Evaluate checked-out candidate
+        working-directory: candidate
+        env:
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        shell: bash
+        run: |
+          args=()
+          if [ -f ../baseline-report.json ]; then args+=(--baseline ../baseline-report.json); fi
+          python -m app.cli --adapter examples.regression_app:answer --cases examples/regression_cases.json --revision "$HEAD_SHA" --allow-mock-judge "${args[@]}"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: regression-reports
+          path: |
+            baseline-report.json
+            candidate/eval_report.json
+      - name: Write check summary
+        if: always()
+        run: |
+          python - <<'PY'
+          import json, os, pathlib
+          p = pathlib.Path('candidate/eval_report.json')
+          report = json.loads(p.read_text()) if p.exists() else {'gate_passed': False, 'gate_reasons': ['No report; infrastructure failed']}
+          with open(os.environ['GITHUB_STEP_SUMMARY'], 'a') as f:
+              f.write('Demo regression check (heuristic judge, no secrets)\n\n```json\n' + json.dumps({k:v for k,v in report.items() if k != 'per_case'}, indent=2) + '\n```\n')
+          PY

@@ -2,7 +2,15 @@ import uuid
 from datetime import datetime, timezone
 
 from sqlalchemy import (
-    Column, Integer, String, Float, DateTime, Text, ForeignKey, JSON, Index,
+    JSON,
+    Column,
+    DateTime,
+    Float,
+    ForeignKey,
+    Index,
+    Integer,
+    String,
+    Text,
 )
 from sqlalchemy.orm import relationship
 
@@ -48,9 +56,7 @@ class Trace(Base):
 
     spans = relationship("Span", back_populates="trace", cascade="all, delete-orphan")
 
-    __table_args__ = (
-        Index("ix_traces_project_created", "project_id", "created_at"),
-    )
+    __table_args__ = (Index("ix_traces_project_created", "project_id", "created_at"),)
 
 
 class Span(Base):

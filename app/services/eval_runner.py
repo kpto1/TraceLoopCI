@@ -1,15 +1,14 @@
-import time
-import asyncio
 import logging
-from datetime import datetime, timezone
+import time
 from typing import Optional
 
 import httpx
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.config import MOCK_LLM_URL
-from app.services.evaluators import EVALUATORS
-from app.models.golden import GoldenCase, GoldenDataset, EvalRun
+from app.config import LLM_API_KEY, LLM_BASE_URL
+from app.models.golden import EvalRun, GoldenCase
+from app.services.gate import evaluate_output
+from app.services.gate import report as build_report
 
 logger = logging.getLogger("traceloop.eval")
 
@@ -20,21 +19,52 @@ async def run_eval(
     model: str = "deepseek-chat",
     llm_target_url: Optional[str] = None,
     is_baseline: bool = False,
+    baseline_run_id: int | None = None,
+    require_real_judge: bool = True,
+    revision: str = "",
+    min_score: int = 80,
+    max_drop: int = 0,
 ) -> dict:
     """Run all golden cases in a dataset through the configured LLM and evaluate."""
-    target = llm_target_url or f"{MOCK_LLM_URL}/v1/chat/completions"
+    target = llm_target_url or f"{LLM_BASE_URL.rstrip(chr(47))}/v1/chat/completions"
     t0 = time.monotonic()
 
     # Load cases
     from sqlalchemy import select
+
     result = await session.execute(
-        select(GoldenCase).where(GoldenCase.dataset_id == dataset_id)
+        select(GoldenCase).where(GoldenCase.dataset_id == dataset_id).order_by(GoldenCase.id)
     )
     cases = list(result.scalars().all())
 
     if not cases:
         raise ValueError(f"No golden cases in dataset {dataset_id}")
 
+    baseline = None
+    if baseline_run_id:
+        baseline_run = await session.get(EvalRun, baseline_run_id)
+        if (
+            not baseline_run
+            or baseline_run.dataset_id != dataset_id
+            or not baseline_run.is_baseline
+        ):
+            raise ValueError("Baseline must be a baseline run from this dataset")
+        baseline = (baseline_run.summary or {}).get("report")
+        if not baseline:
+            raise ValueError("Legacy baseline has no reproducible report")
+    snapshots = [
+        {
+            "id": c.id,
+            "input_text": c.input_text,
+            "expected_keywords": c.expected_keywords or [],
+            "forbidden_keywords": c.forbidden_keywords or [],
+            "expected_json_schema": c.expected_json_schema,
+            "must_cite_docs": c.must_cite_docs or [],
+            "messages": c.messages,
+            "system_prompt": c.system_prompt,
+        }
+        for c in cases
+    ]
     # Create eval run record
     run = EvalRun(
         dataset_id=dataset_id,
@@ -47,75 +77,62 @@ async def run_eval(
     await session.commit()
 
     per_case = []
-    passed = 0
-    costs = []
-    latencies = []
+    try:
+        async with httpx.AsyncClient(timeout=120.0) as client:
+            for case in cases:
+                per_case.append(await _eval_one(client, target, model, case, require_real_judge))
+    except BaseException:
+        run.status = "failed"
+        run.summary = {"error": "Evaluation interrupted before completion"}
+        await session.commit()
+        raise
 
-    async with httpx.AsyncClient(timeout=120.0) as client:
-        for case in cases:
-            result_entry = await _eval_one(client, target, model, case)
-            per_case.append(result_entry)
-
-            if result_entry["overall_passed"]:
-                passed += 1
-            if result_entry.get("cost"):
-                costs.append(result_entry["cost"])
-            if result_entry.get("latency_ms"):
-                latencies.append(result_entry["latency_ms"])
-
-    total_time = (time.monotonic() - t0) * 1000
-
-    # Compute aggregate
-    failed = len(cases) - passed
-    overall_score = int((passed / len(cases)) * 100) if cases else 0
-    total_cost = sum(costs)
-    p95_latency = sorted(latencies)[int(len(latencies) * 0.95)] if latencies else None
-
-    run.status = "completed"
-    run.passed = passed
-    run.failed = failed
-    run.overall_score = overall_score
-    run.cost_total = int(total_cost * 1_000_000)  # micro-units
-    run.latency_p95_ms = p95_latency
+    report = build_report(
+        snapshots, per_case, revision, baseline, min_score, max_drop, require_real_judge
+    )
+    report.update(run_id=run.id, dataset_id=dataset_id, model=model)
+    run.status = "failed" if report["evaluation_errors"] else "completed"
+    run.passed = report["passed"]
+    run.failed = report["failed"]
+    run.overall_score = int(report["overall_score"])
+    run.cost_total = None
+    run.latency_p95_ms = report["p95_latency_ms"]
     run.per_case_results = per_case
-    run.summary = {
-        "total_time_ms": int(total_time),
-        "avg_cost": round(total_cost / len(cases), 6) if cases else 0,
-    }
-
+    run.summary = {"report": report, "total_time_ms": int((time.monotonic() - t0) * 1000)}
     await session.commit()
-
-    return {
-        "run_id": run.id,
-        "dataset_id": dataset_id,
-        "model": model,
-        "total_cases": len(cases),
-        "passed": passed,
-        "failed": failed,
-        "overall_score": overall_score,
-        "total_cost": round(total_cost, 6),
-        "p95_latency_ms": p95_latency,
-        "per_case": per_case,
-    }
+    return report
 
 
-async def _eval_one(client, target_url, model, case) -> dict:
+async def _eval_one(client, target_url, model, case, require_real_judge=True) -> dict:
     """Run one golden case: call LLM → run all evaluators → return results."""
     t_start = time.monotonic()
 
     # Call LLM
     try:
-        resp = await client.post(target_url, json={
-            "model": model,
-            "messages": [{"role": "user", "content": case.input_text}],
-            "temperature": 0,
-            "stream": False,
-        })
+        resp = await client.post(
+            target_url,
+            json={
+                "model": model,
+                "messages": case.messages
+                or (
+                    (
+                        [{"role": "system", "content": case.system_prompt}]
+                        if case.system_prompt
+                        else []
+                    )
+                    + [{"role": "user", "content": case.input_text}]
+                ),
+                "temperature": 0,
+                "stream": False,
+            },
+            headers={"Authorization": f"Bearer {LLM_API_KEY}"} if LLM_API_KEY else {},
+        )
         if resp.status_code != 200:
             return {
                 "case_id": case.id,
                 "input_text": case.input_text[:100],
                 "overall_passed": False,
+                "state": "evaluation_error",
                 "error": f"LLM returned {resp.status_code}",
             }
         data = resp.json()
@@ -126,39 +143,20 @@ async def _eval_one(client, target_url, model, case) -> dict:
             "case_id": case.id,
             "input_text": case.input_text[:100],
             "overall_passed": False,
-            "error": str(e),
+            "state": "evaluation_error",
+            "error": type(e).__name__,
         }
 
     elapsed = (time.monotonic() - t_start) * 1000
-    cost = (tokens / 1_000_000) * 1.0  # $1/M tokens
-
-    # Run evaluators
     golden = {
         "input_text": case.input_text,
         "expected_keywords": case.expected_keywords or [],
         "forbidden_keywords": case.forbidden_keywords or [],
         "expected_json_schema": case.expected_json_schema,
+        "must_cite_docs": case.must_cite_docs or [],
     }
-
-    eval_results = {}
-    for name, mod in EVALUATORS.items():
-        try:
-            eval_results[name] = await mod.evaluate(golden, output)
-        except Exception:
-            eval_results[name] = {
-                "eval_type": name, "passed": False, "score": 0.0,
-                "details": {"error": "Evaluator crashed"},
-            }
-
-    all_passed = all(r.get("passed", False) for r in eval_results.values())
-
-    return {
-        "case_id": case.id,
-        "input_text": case.input_text[:200],
-        "model_output": output[:500],
-        "tokens": tokens,
-        "cost": cost,
-        "latency_ms": int(elapsed),
-        "overall_passed": all_passed,
-        "evaluators": eval_results,
-    }
+    result = await evaluate_output(golden, output, require_real_judge)
+    result.update(
+        case_id=case.id, input_text=case.input_text, tokens=tokens, latency_ms=int(elapsed)
+    )
+    return result
