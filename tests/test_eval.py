@@ -1,5 +1,4 @@
-import pytest
-from unittest.mock import AsyncMock, patch, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 
 class TestKeywordEval:
@@ -84,7 +83,7 @@ class TestJsonEval:
         # When a schema is specified, invalid JSON still fails
         result = await evaluate(
             {"expected_json_schema": {"type": "object"}},
-            'not valid json {{{',
+            "not valid json {{{",
         )
         assert result["passed"] is False
 
@@ -94,7 +93,7 @@ class TestJsonEval:
         # When no schema is specified, non-JSON output should NOT fail
         result = await evaluate(
             {"expected_json_schema": None},
-            'this is plain text, not json',
+            "this is plain text, not json",
         )
         assert result["passed"] is True
         assert result["details"].get("skipped") is True
@@ -105,7 +104,11 @@ class TestLLMJudge:
         from app.services.evaluators.llm_judge import evaluate
 
         result = await evaluate(
-            {"input_text": "退款政策？", "expected_keywords": ["7天", "退款"], "forbidden_keywords": []},
+            {
+                "input_text": "退款政策？",
+                "expected_keywords": ["7天", "退款"],
+                "forbidden_keywords": [],
+            },
             "我们支持7天内无理由退款。",
         )
         assert result["passed"] is True
@@ -114,7 +117,11 @@ class TestLLMJudge:
         from app.services.evaluators.llm_judge import evaluate
 
         result = await evaluate(
-            {"input_text": "退款？", "expected_keywords": ["退款"], "forbidden_keywords": ["不能退款"]},
+            {
+                "input_text": "退款？",
+                "expected_keywords": ["退款"],
+                "forbidden_keywords": ["不能退款"],
+            },
             "抱歉，我们不能退款。",
         )
         assert result["passed"] is False
@@ -142,7 +149,7 @@ class TestDatasetAPI:
     async def test_create_and_list(self, client):
         r = await client.post("/v1/datasets", json={"name": "客服场景"})
         assert r.status_code == 200
-        ds_id = r.json()["id"]
+        assert r.json()["id"] > 0
 
         r2 = await client.get("/v1/datasets")
         assert r2.status_code == 200
@@ -153,27 +160,38 @@ class TestDatasetAPI:
         r = await client.post("/v1/datasets", json={"name": "test-ds"})
         ds_id = r.json()["id"]
 
-        r2 = await client.post(f"/v1/datasets/{ds_id}/cases", json={
-            "input_text": "退款政策？",
-            "expected_keywords": ["退款", "7天"],
-            "forbidden_keywords": ["不能退款"],
-        })
+        r2 = await client.post(
+            f"/v1/datasets/{ds_id}/cases",
+            json={
+                "input_text": "退款政策？",
+                "expected_keywords": ["退款", "7天"],
+                "forbidden_keywords": ["不能退款"],
+            },
+        )
         assert r2.status_code == 200
 
     async def test_add_case_from_trace(self, client):
         # Create trace first
-        tr = await client.post("/v1/traces", json={
-            "user_input": "退款政策？", "model_output": "7天内退款", "model": "test",
-        })
+        tr = await client.post(
+            "/v1/traces",
+            json={
+                "user_input": "退款政策？",
+                "model_output": "7天内退款",
+                "model": "test",
+            },
+        )
         trace_id = tr.json()["trace_id"]
 
         # Create dataset
         r = await client.post("/v1/datasets", json={"name": "from-trace"})
         ds_id = r.json()["id"]
 
-        r2 = await client.post(f"/v1/datasets/{ds_id}/cases/from-trace/{trace_id}", json={
-            "expected_keywords": ["退款"],
-        })
+        r2 = await client.post(
+            f"/v1/datasets/{ds_id}/cases/from-trace/{trace_id}",
+            json={
+                "expected_keywords": ["退款"],
+            },
+        )
         assert r2.status_code == 200
 
     async def test_trigger_eval(self, client):
@@ -181,11 +199,14 @@ class TestDatasetAPI:
         r = await client.post("/v1/datasets", json={"name": "eval-ds"})
         ds_id = r.json()["id"]
 
-        await client.post(f"/v1/datasets/{ds_id}/cases", json={
-            "input_text": "退款政策？",
-            "expected_keywords": ["退款"],
-            "forbidden_keywords": [],
-        })
+        await client.post(
+            f"/v1/datasets/{ds_id}/cases",
+            json={
+                "input_text": "退款政策？",
+                "expected_keywords": ["退款"],
+                "forbidden_keywords": [],
+            },
+        )
 
         # Mock the LLM call so it doesn't need external server
         mock_resp = MagicMock()
@@ -201,9 +222,14 @@ class TestDatasetAPI:
         mock_client.post.return_value = mock_resp
 
         with patch("app.services.eval_runner.httpx.AsyncClient", return_value=mock_client):
-            r3 = await client.post("/v1/eval/run", json={
-                "dataset_id": ds_id, "model": "mock", "is_baseline": True,
-            })
+            r3 = await client.post(
+                "/v1/eval/run",
+                json={
+                    "dataset_id": ds_id,
+                    "model": "mock",
+                    "is_baseline": True,
+                },
+            )
             assert r3.status_code == 200
             data = r3.json()
             assert data["total_cases"] == 1

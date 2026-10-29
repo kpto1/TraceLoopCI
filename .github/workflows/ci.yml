@@ -1,80 +1,76 @@
 name: CI
-
 on:
   push:
     branches: [main]
   pull_request:
     branches: [main]
-
+permissions:
+  contents: read
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
-
 jobs:
   test:
     runs-on: ubuntu-latest
     timeout-minutes: 15
-
     services:
       postgres:
-        image: pgvector/pgvector:pg16
+        image: postgres:16
         env:
           POSTGRES_USER: traceloop
           POSTGRES_PASSWORD: traceloop_dev
           POSTGRES_DB: traceloop
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd "pg_isready -U traceloop"
-          --health-interval 5s
-          --health-timeout 5s
-          --health-retries 5
-
+        ports: ["5432:5432"]
+        options: --health-cmd "pg_isready -U traceloop" --health-interval 5s --health-timeout 5s --health-retries 10
       redis:
         image: redis:7-alpine
-        ports:
-          - 6379:6379
-        options: >-
-          --health-cmd "redis-cli ping"
-          --health-interval 5s
-          --health-timeout 5s
-          --health-retries 5
-
+        ports: ["6379:6379"]
+        options: --health-cmd "redis-cli ping" --health-interval 5s --health-timeout 5s --health-retries 10
     steps:
       - uses: actions/checkout@v4
-
-      - name: Set up Python 3.12
-        uses: actions/setup-python@v5
+      - uses: actions/setup-python@v5
         with:
-          python-version: "3.12"
-          cache: pip
-
-      - name: Install dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install -e ".[dev]"
-
-      - name: Run pytest with coverage
+          python-version: '3.12'
+      - run: pip install --require-hashes -r requirements-dev.lock
+      - run: pip install --no-deps -e . -e sdk/python
+      - run: ruff check app tests sdk/python migrations
+      - run: python -m pytest tests sdk/python/tests --cov=app --cov-report=xml
+      - name: PostgreSQL migrations and integration
         env:
           DATABASE_URL: postgresql+asyncpg://traceloop:traceloop_dev@localhost:5432/traceloop
           REDIS_URL: redis://localhost:6379/0
-          DEBUG: "true"
-        run: pytest --cov=app --cov-report=xml --cov-report=term-missing -v
-
-      - name: Run ruff lint
-        run: ruff check .
-
-      - name: Upload coverage to Codecov
-        uses: codecov/codecov-action@v4
+          TEST_REAL_REDIS: '1'
+        run: |
+          alembic upgrade head
+          python -m pytest tests -q
+      - run: python -m build
+      - uses: actions/upload-artifact@v4
+        if: always()
         with:
-          file: coverage.xml
-          fail_ci_if_error: false
-
-  docker-build:
+          name: coverage
+          path: coverage.xml
+  frontend:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
-
-      - name: Build Docker image
-        run: docker build -t traceloopci/traceloop-ci:${{ github.sha }} .
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - uses: pnpm/action-setup@v4
+        with:
+          version: '11.25.0'
+      - run: pnpm install --frozen-lockfile && pnpm test && pnpm build
+        working-directory: frontend
+      - run: pnpm install --frozen-lockfile && pnpm test
+        working-directory: sdk/typescript
+  docker-build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - run: docker compose build
+      - run: docker compose up -d --wait --wait-timeout 120
+      - run: curl --fail http://localhost:3000/ && curl --fail http://localhost:8000/ready
+      - if: always()
+        run: docker compose logs && docker compose down

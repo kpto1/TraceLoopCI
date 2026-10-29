@@ -1,6 +1,3 @@
-import pytest
-
-
 class TestTraceRecorder:
     def test_recorder_creation(self):
         from trace_loop.plugin import TraceRecorder

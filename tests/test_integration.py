@@ -1,6 +1,8 @@
 """Integration tests — end-to-end: proxy + eval + trace flows."""
+
+from unittest.mock import AsyncMock, MagicMock, patch
+
 import pytest
-from unittest.mock import AsyncMock, patch, MagicMock
 
 
 class TestProxyFlow:
@@ -77,18 +79,29 @@ class TestDatasetEvalFlow:
 
     async def test_create_dataset_and_run_eval(self, client):
         # Create dataset
-        r = await client.post("/v1/datasets", json={
-            "name": "客服退款场景",
-            "description": "测试退款相关的prompt回归",
-            "project_id": "qa",
-        })
+        r = await client.post(
+            "/v1/datasets",
+            json={
+                "name": "客服退款场景",
+                "description": "测试退款相关的prompt回归",
+                "project_id": "qa",
+            },
+        )
         assert r.status_code == 200
         ds_id = r.json()["id"]
 
         # Add cases
         cases = [
-            {"input_text": "我要退款", "expected_keywords": ["退款", "7天"], "forbidden_keywords": ["不能退"]},
-            {"input_text": "退货流程是什么", "expected_keywords": ["退货", "流程"], "forbidden_keywords": []},
+            {
+                "input_text": "我要退款",
+                "expected_keywords": ["退款", "7天"],
+                "forbidden_keywords": ["不能退"],
+            },
+            {
+                "input_text": "退货流程是什么",
+                "expected_keywords": ["退货", "流程"],
+                "forbidden_keywords": [],
+            },
             {"input_text": "订单状态查询", "expected_keywords": ["订单"], "forbidden_keywords": []},
         ]
         for c in cases:
@@ -113,11 +126,14 @@ class TestDatasetEvalFlow:
         mock_client.post.return_value = mock_resp
 
         with patch("app.services.eval_runner.httpx.AsyncClient", return_value=mock_client):
-            r = await client.post("/v1/eval/run", json={
-                "dataset_id": ds_id,
-                "model": "deepseek-chat",
-                "is_baseline": True,
-            })
+            r = await client.post(
+                "/v1/eval/run",
+                json={
+                    "dataset_id": ds_id,
+                    "model": "deepseek-chat",
+                    "is_baseline": True,
+                },
+            )
             assert r.status_code == 200
             data = r.json()
             assert data["total_cases"] == 3
@@ -140,12 +156,15 @@ class TestDatasetEvalFlow:
     async def test_add_case_from_trace_flow(self, client):
         """Golden case creation from existing trace."""
         # Create a trace
-        tr = await client.post("/v1/traces", json={
-            "user_input": "会员等级有哪些？",
-            "model_output": "我们有普通会员、高级会员和尊享会员三个等级。",
-            "model": "deepseek-chat",
-            "project_id": "customer-service",
-        })
+        tr = await client.post(
+            "/v1/traces",
+            json={
+                "user_input": "会员等级有哪些？",
+                "model_output": "我们有普通会员、高级会员和尊享会员三个等级。",
+                "model": "deepseek-chat",
+                "project_id": "customer-service",
+            },
+        )
         assert tr.status_code == 200
         trace_id = tr.json()["trace_id"]
 
@@ -177,13 +196,25 @@ class TestCoverageGaps:
 
     async def test_trace_service_list_with_filters(self, client):
         # Create traces with different models
-        await client.post("/v1/traces", json={
-            "user_input": "q1", "model_output": "a1", "model": "gpt-4", "status": "success",
-        })
-        await client.post("/v1/traces", json={
-            "user_input": "q2", "model_output": "a2", "model": "gpt-4", "status": "error",
-            "error_message": "timeout",
-        })
+        await client.post(
+            "/v1/traces",
+            json={
+                "user_input": "q1",
+                "model_output": "a1",
+                "model": "gpt-4",
+                "status": "success",
+            },
+        )
+        await client.post(
+            "/v1/traces",
+            json={
+                "user_input": "q2",
+                "model_output": "a2",
+                "model": "gpt-4",
+                "status": "error",
+                "error_message": "timeout",
+            },
+        )
 
         # Filter by model
         r = await client.get("/v1/traces", params={"model": "gpt-4"})
@@ -196,15 +227,18 @@ class TestCoverageGaps:
         assert all(t["status"] == "error" for t in r.json()["items"])
 
     async def test_trace_with_spans_eager_loaded(self, client):
-        r = await client.post("/v1/traces", json={
-            "user_input": "complex query",
-            "model_output": "complex answer",
-            "model": "test",
-            "spans": [
-                {"span_type": "retrieval", "name": "search docs", "duration_ms": 50},
-                {"span_type": "generation", "name": "generate", "duration_ms": 300},
-            ],
-        })
+        r = await client.post(
+            "/v1/traces",
+            json={
+                "user_input": "complex query",
+                "model_output": "complex answer",
+                "model": "test",
+                "spans": [
+                    {"span_type": "retrieval", "name": "search docs", "duration_ms": 50},
+                    {"span_type": "generation", "name": "generate", "duration_ms": 300},
+                ],
+            },
+        )
         tid = r.json()["trace_id"]
 
         # Get with spans
@@ -219,7 +253,6 @@ class TestCoverageGaps:
         from app.database import async_session
         from app.models.golden import GoldenDataset
         from app.services.eval_runner import run_eval
-        import pytest
 
         async with async_session() as session:
             ds = GoldenDataset(name="empty-ds")
@@ -232,7 +265,8 @@ class TestCoverageGaps:
     async def test_config_defaults(self):
         """Verify config defaults are set correctly."""
         from app import config
+
         assert config.SERVER_PORT == 8000
-        assert config.DEBUG == False  # set by test env
+        assert not config.DEBUG  # set by test env
         assert config.REDIS_STREAM_NAME == "traceloop:traces"
         assert config.REDIS_BATCH_SIZE == 100

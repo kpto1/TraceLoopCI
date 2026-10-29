@@ -1,32 +1,25 @@
 import logging
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Security
-from fastapi.security import APIKeyHeader
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_session
-from app.config import API_KEY
-from app.models.golden import GoldenDataset, GoldenCase, EvalRun
+from app.models.golden import EvalRun, GoldenCase, GoldenDataset
+from app.schemas import CaseInput, DatasetInput, EvalInput
+from app.security import check_key as check_key
 from app.services.eval_runner import run_eval
 
 logger = logging.getLogger("traceloop.datasets")
 router = APIRouter(prefix="/v1", tags=["datasets"])
-api_key_header = APIKeyHeader(name="X-API-Key", auto_error=False)
-
-
-async def check_key(key: Optional[str] = Security(api_key_header)):
-    if API_KEY and key != API_KEY:
-        raise HTTPException(status_code=401, detail="Invalid API key")
-    return key
-
 
 # -- Datasets --
 
+
 @router.post("/datasets")
 async def create_dataset(
-    data: dict,
+    data: DatasetInput,
     session: AsyncSession = Depends(get_session),
     key: str = Depends(check_key),
 ):
@@ -52,7 +45,12 @@ async def list_datasets(
     datasets = result.scalars().all()
     return {
         "items": [
-            {"id": d.id, "name": d.name, "description": d.description, "created_at": d.created_at.isoformat()}
+            {
+                "id": d.id,
+                "name": d.name,
+                "description": d.description,
+                "created_at": d.created_at.isoformat(),
+            }
             for d in datasets
         ]
     }
@@ -69,9 +67,7 @@ async def get_dataset(
     if not ds:
         raise HTTPException(status_code=404, detail="Dataset not found")
 
-    cases_result = await session.execute(
-        select(GoldenCase).where(GoldenCase.dataset_id == id)
-    )
+    cases_result = await session.execute(select(GoldenCase).where(GoldenCase.dataset_id == id))
     cases = cases_result.scalars().all()
 
     return {
@@ -82,7 +78,10 @@ async def get_dataset(
         "cases": [
             {
                 "id": c.id,
-                "input_text": c.input_text[:200],
+                "input_text": c.input_text,
+                "messages": c.messages,
+                "system_prompt": c.system_prompt,
+                "must_cite_docs": c.must_cite_docs,
                 "expected_keywords": c.expected_keywords,
                 "forbidden_keywords": c.forbidden_keywords,
                 "expected_json_schema": c.expected_json_schema,
@@ -96,13 +95,16 @@ async def get_dataset(
 
 # -- Cases --
 
+
 @router.post("/datasets/{dataset_id}/cases")
 async def add_case(
     dataset_id: int,
-    data: dict,
+    data: CaseInput,
     session: AsyncSession = Depends(get_session),
     key: str = Depends(check_key),
 ):
+    if not await session.get(GoldenDataset, dataset_id):
+        raise HTTPException(404, "Dataset not found")
     case = GoldenCase(
         dataset_id=dataset_id,
         input_text=data.get("input_text", ""),
@@ -113,6 +115,8 @@ async def add_case(
         source_trace_id=data.get("source_trace_id"),
         tags=data.get("tags", []),
         notes=data.get("notes"),
+        messages=data.messages,
+        system_prompt=data.system_prompt,
     )
     session.add(case)
     await session.commit()
@@ -123,26 +127,32 @@ async def add_case(
 async def add_case_from_trace(
     dataset_id: int,
     trace_id: str,
-    data: dict,
+    data: CaseInput,
     session: AsyncSession = Depends(get_session),
     key: str = Depends(check_key),
 ):
     """Create a golden case from an existing trace."""
     from app.models.trace import Trace
+
     result = await session.execute(select(Trace).where(Trace.trace_id == trace_id))
     trace = result.scalar_one_or_none()
     if not trace:
         raise HTTPException(status_code=404, detail="Trace not found")
 
+    if not await session.get(GoldenDataset, dataset_id):
+        raise HTTPException(404, "Dataset not found")
     case = GoldenCase(
         dataset_id=dataset_id,
         source_trace_id=trace_id,
-        input_text=data.get("input_text", trace.user_input or ""),
+        must_cite_docs=data.must_cite_docs,
+        input_text=data.input_text or trace.user_input or "",
         expected_keywords=data.get("expected_keywords", []),
         forbidden_keywords=data.get("forbidden_keywords", []),
         expected_json_schema=data.get("expected_json_schema"),
         tags=data.get("tags", []),
         notes=data.get("notes"),
+        messages=data.messages or (trace.metadata_extra or {}).get("messages"),
+        system_prompt=data.system_prompt or trace.system_prompt,
     )
     session.add(case)
     await session.commit()
@@ -151,9 +161,10 @@ async def add_case_from_trace(
 
 # -- Eval --
 
+
 @router.post("/eval/run")
 async def trigger_eval(
-    data: dict,
+    data: EvalInput,
     session: AsyncSession = Depends(get_session),
     key: str = Depends(check_key),
 ):
@@ -169,6 +180,11 @@ async def trigger_eval(
         dataset_id=int(dataset_id),
         model=model,
         is_baseline=is_baseline,
+        baseline_run_id=data.baseline_run_id,
+        require_real_judge=data.require_real_judge,
+        revision=data.revision,
+        min_score=data.min_score,
+        max_drop=data.max_drop,
     )
     return report
 

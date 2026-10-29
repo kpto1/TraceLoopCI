@@ -17,3 +17,11 @@ htmlcov/
 .DS_Store
 Thumbs.db
 alembic/versions/*.pyc
+
+.coverage*
+coverage.xml
+*.db
+*.sqlite*
+.ruff_cache/
+*.tsbuildinfo
+eval_report.json

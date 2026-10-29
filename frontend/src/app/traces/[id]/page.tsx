@@ -41,8 +41,8 @@ export default function TraceDetailPage() {
             <dt>Status</dt>
             <dd>
               <span className={`badge ${
-                trace.status === "completed" ? "badge-success" :
-                trace.status === "failed" ? "badge-error" :
+                trace.status === "success" ? "badge-success" :
+                trace.status === "error" ? "badge-error" :
                 "badge-default"
               }`}>
                 {trace.status}

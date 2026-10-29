@@ -17,3 +17,10 @@
 - 仅支持 OpenAI 兼容格式
 - LLM-as-Judge 依赖外部裁判模型 API Key
 - Redis Streams 消费者为单 worker
+
+## Unreleased — reliability and regression gate
+
+- Repair queue consumption, pending recovery, stable trace identity and span persistence.
+- Add real SSE forwarding, fail-closed judge errors, baseline comparison and checkout-local adapter CLI.
+- Add migrations, frontend dataset/report workflow, server-side credentials, validation and reproducible dependency locks.
+- Remove duplicate repository and generated database/coverage artifacts.

@@ -1,10 +1,10 @@
-import time
-import json
-import uuid
 import asyncio
+import json
+import time
+import uuid
 
 from fastapi import FastAPI, Request
-from fastapi.responses import StreamingResponse, JSONResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 
 app = FastAPI(title="mock-llm", version="0.1.0")
 
@@ -18,10 +18,32 @@ _RESPONSES = {
 _DEFAULT = "这是一个模拟回答。在真实环境中这里会是大模型生成的有针对性的回复。"
 
 _STREAM_CHUNKS = [
-    "这是", "一个", "模拟", "的", "流式", "回答", "。\n\n",
-    "通过", "Mock", " Server", "，", "你可以", "测试", "SSE",
-    "流式", "响应", "处理", "逻辑", "，", "而不", "需要",
-    "真正", "调用", "LLM", "API", "。",
+    "这是",
+    "一个",
+    "模拟",
+    "的",
+    "流式",
+    "回答",
+    "。\n\n",
+    "通过",
+    "Mock",
+    " Server",
+    "，",
+    "你可以",
+    "测试",
+    "SSE",
+    "流式",
+    "响应",
+    "处理",
+    "逻辑",
+    "，",
+    "而不",
+    "需要",
+    "真正",
+    "调用",
+    "LLM",
+    "API",
+    "。",
 ]
 
 
@@ -53,22 +75,26 @@ async def chat_completions(request: Request):
     prompt_tokens = max(len(user_msg) // 2, 5)
     completion_tokens = max(len(text) // 2, 5)
 
-    return JSONResponse({
-        "id": f"chatcmpl-{uuid.uuid4().hex[:12]}",
-        "object": "chat.completion",
-        "created": int(time.time()),
-        "model": model,
-        "choices": [{
-            "index": 0,
-            "message": {"role": "assistant", "content": text},
-            "finish_reason": "stop",
-        }],
-        "usage": {
-            "prompt_tokens": prompt_tokens,
-            "completion_tokens": completion_tokens,
-            "total_tokens": prompt_tokens + completion_tokens,
-        },
-    })
+    return JSONResponse(
+        {
+            "id": f"chatcmpl-{uuid.uuid4().hex[:12]}",
+            "object": "chat.completion",
+            "created": int(time.time()),
+            "model": model,
+            "choices": [
+                {
+                    "index": 0,
+                    "message": {"role": "assistant", "content": text},
+                    "finish_reason": "stop",
+                }
+            ],
+            "usage": {
+                "prompt_tokens": prompt_tokens,
+                "completion_tokens": completion_tokens,
+                "total_tokens": prompt_tokens + completion_tokens,
+            },
+        }
+    )
 
 
 def _pick_response(user_msg: str) -> str:
@@ -81,18 +107,20 @@ def _pick_response(user_msg: str) -> str:
 
 
 async def _stream(model: str, text: str):
-    chunks = [text[i:i+3] for i in range(0, len(text), 3)] or _STREAM_CHUNKS
+    chunks = [text[i : i + 3] for i in range(0, len(text), 3)] or _STREAM_CHUNKS
     for i, chunk in enumerate(chunks):
         payload = {
             "id": f"chatcmpl-{uuid.uuid4().hex[:12]}",
             "object": "chat.completion.chunk",
             "created": int(time.time()),
             "model": model,
-            "choices": [{
-                "index": 0,
-                "delta": {"content": chunk},
-                "finish_reason": None if i < len(chunks) - 1 else "stop",
-            }],
+            "choices": [
+                {
+                    "index": 0,
+                    "delta": {"content": chunk},
+                    "finish_reason": None if i < len(chunks) - 1 else "stop",
+                }
+            ],
         }
         yield f"data: {json.dumps(payload, ensure_ascii=False)}\n\n"
         await asyncio.sleep(0.05)

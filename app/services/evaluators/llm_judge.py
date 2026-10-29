@@ -1,10 +1,10 @@
 import json
-import re
 import logging
+import re
 
 import httpx
 
-from app.config import JUDGE_MODEL, JUDGE_API_KEY, JUDGE_BASE_URL
+from app.config import JUDGE_API_KEY, JUDGE_BASE_URL, JUDGE_MODEL
 
 logger = logging.getLogger("traceloop.judge")
 
@@ -37,7 +37,9 @@ async def evaluate(golden_case: dict, model_output: str) -> dict:
         input_text=golden_case.get("input_text", ""),
         model_output=model_output,
         expected_keywords=json.dumps(golden_case.get("expected_keywords", []), ensure_ascii=False),
-        forbidden_keywords=json.dumps(golden_case.get("forbidden_keywords", []), ensure_ascii=False),
+        forbidden_keywords=json.dumps(
+            golden_case.get("forbidden_keywords", []), ensure_ascii=False
+        ),
     )
 
     try:
@@ -51,22 +53,38 @@ async def evaluate(golden_case: dict, model_output: str) -> dict:
                 json={
                     "model": JUDGE_MODEL,
                     "messages": [
-                        {"role": "system", "content": "你是一个评测裁判。只输出JSON，不输出其他内容。"},
+                        {
+                            "role": "system",
+                            "content": "你是一个评测裁判。只输出JSON，不输出其他内容。",
+                        },
                         {"role": "user", "content": prompt},
                     ],
                     "temperature": 0,
                     "max_tokens": 200,
                 },
             )
+            resp.raise_for_status()
             data = resp.json()
             content = data["choices"][0]["message"]["content"]
             result = _parse_judge_output(content)
 
     except Exception as e:
         logger.warning("Judge call failed: %s — falling back to mock", e)
-        return _mock_judge(golden_case, model_output)
+        return {
+            "eval_type": "llm_judge",
+            "passed": False,
+            "score": 0,
+            "state": "evaluation_error",
+            "details": {"error": "Judge unavailable"},
+        }
 
     raw_score = result.get("score", 5)
+    if not 0 <= raw_score <= 10 or result.get("reason") == "无法解析裁判输出":
+        return {
+            "passed": False,
+            "state": "evaluation_error",
+            "details": {"error": "Invalid judge output"},
+        }
     return {
         "eval_type": "llm_judge",
         "passed": raw_score >= 6,
@@ -88,7 +106,7 @@ def _parse_judge_output(text: str) -> dict:
         pass
 
     # Try to extract JSON from markdown block
-    m = re.search(r'```(?:json)?\s*\n?(.*?)\n?```', text, re.DOTALL)
+    m = re.search(r"```(?:json)?\s*\n?(.*?)\n?```", text, re.DOTALL)
     if m:
         try:
             data = json.loads(m.group(1))
@@ -101,12 +119,12 @@ def _parse_judge_output(text: str) -> dict:
     if m:
         return {"score": int(m.group(1)), "reason": text[:100]}
 
-    m = re.search(r'(\d+)\s*分', text)
+    m = re.search(r"(\d+)\s*分", text)
     if m:
         return {"score": int(m.group(1)), "reason": text[:100]}
 
     # Last resort: find any number 0-10
-    numbers = re.findall(r'\b([0-9]|10)\b', text)
+    numbers = re.findall(r"\b([0-9]|10)\b", text)
     if numbers:
         return {"score": int(numbers[0]), "reason": text[:100]}
 

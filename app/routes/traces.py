@@ -1,37 +1,35 @@
 import logging
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Security
-from fastapi.security import APIKeyHeader
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_session
-from app.config import API_KEY
+from app.schemas import TraceInput
+from app.security import check_key as check_api_key
 from app.services.trace_service import (
-    create_trace, create_trace_async, get_traces,
-    get_trace_by_id, get_trace_with_spans, get_trace_count,
+    create_trace,
+    create_trace_async,
+    get_trace_by_id,
+    get_trace_count,
+    get_trace_with_spans,
+    get_traces,
 )
 
 logger = logging.getLogger("traceloop.api")
 router = APIRouter(prefix="/v1", tags=["traces"])
-api_key_header = APIKeyHeader(name="X-API-Key", auto_error=False)
-
-
-async def check_api_key(key: Optional[str] = Security(api_key_header)):
-    if API_KEY and key != API_KEY:
-        raise HTTPException(status_code=401, detail="Invalid or missing API key")
-    return key or "anonymous"
 
 
 @router.post("/traces")
 async def ingest_trace(
-    data: dict,
+    data: TraceInput,
     session: AsyncSession = Depends(get_session),
     _key: str = Depends(check_api_key),
 ):
     try:
         trace = await create_trace(
             session=session,
+            trace_id=data.trace_id,
             user_input=data.get("user_input", data.get("input", "")),
             model=data.get("model", "unknown"),
             model_output=data.get("model_output", data.get("output")),
@@ -53,21 +51,21 @@ async def ingest_trace(
             spans=data.get("spans"),
         )
         return {"status": "ok", "trace_id": trace.trace_id}
-    except Exception as e:
+    except Exception:
         logger.exception("Failed to ingest trace")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Request could not be persisted")
 
 
 @router.post("/traces/async")
 async def ingest_trace_async(
-    data: dict,
+    data: TraceInput,
     _key: str = Depends(check_api_key),
 ):
     try:
         return await create_trace_async(data)
-    except Exception as e:
+    except Exception:
         logger.exception("Failed to enqueue trace")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Request could not be persisted")
 
 
 @router.get("/traces")

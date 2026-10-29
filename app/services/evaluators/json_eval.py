@@ -1,4 +1,5 @@
 import json
+
 import jsonschema
 
 
@@ -34,7 +35,7 @@ async def evaluate(golden_case: dict, model_output: str) -> dict:
 
     result = {"valid_json": True}
 
-    if schema:
+    if schema is not None:
         try:
             jsonschema.validate(parsed, schema)
             result["schema_valid"] = True

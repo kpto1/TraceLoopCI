@@ -1,7 +1,13 @@
 from datetime import datetime, timezone
 
 from sqlalchemy import (
-    Column, Integer, String, DateTime, Text, ForeignKey, JSON, Index,
+    JSON,
+    Column,
+    DateTime,
+    ForeignKey,
+    Integer,
+    String,
+    Text,
 )
 from sqlalchemy.orm import relationship
 
@@ -28,10 +34,14 @@ class GoldenCase(Base):
     __tablename__ = "golden_cases"
 
     id = Column(Integer, primary_key=True, autoincrement=True)
-    dataset_id = Column(Integer, ForeignKey("golden_datasets.id", ondelete="CASCADE"), nullable=False)
+    dataset_id = Column(
+        Integer, ForeignKey("golden_datasets.id", ondelete="CASCADE"), nullable=False
+    )
     source_trace_id = Column(String(24), index=True)
 
     input_text = Column(Text, nullable=False)
+    messages = Column(JSON)
+    system_prompt = Column(Text)
     expected_keywords = Column(JSON, default=list)
     forbidden_keywords = Column(JSON, default=list)
     expected_json_schema = Column(JSON)

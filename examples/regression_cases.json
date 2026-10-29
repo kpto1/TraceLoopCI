@@ -1,0 +1,3 @@
+[
+  {"id": 1, "input_text": "退款政策是什么？", "expected_keywords": ["7天", "退款"], "forbidden_keywords": ["不能退款"], "must_cite_docs": ["refund-policy"]}
+]

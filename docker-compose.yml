@@ -1,60 +1,66 @@
 services:
   postgres:
     image: pgvector/pgvector:pg16
-    container_name: traceloop-db
     environment:
       POSTGRES_USER: traceloop
-      POSTGRES_PASSWORD: traceloop_dev
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-traceloop_dev}
       POSTGRES_DB: traceloop
-    ports:
-      - "5432:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U traceloop"]
+      test: ["CMD-SHELL", "pg_isready -U traceloop -d traceloop"]
       interval: 5s
       timeout: 5s
-      retries: 5
-
+      retries: 10
   redis:
     image: redis:7-alpine
-    container_name: traceloop-redis
-    ports:
-      - "6379:6379"
+    command: redis-server --appendonly yes
+    volumes:
+      - redisdata:/data
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 5s
       timeout: 5s
-      retries: 5
-
+      retries: 10
   api:
     build: .
-    container_name: traceloop-api
     ports:
-      - "8000:8000"
+      - "127.0.0.1:8000:8000"
     environment:
-      DATABASE_URL: postgresql+asyncpg://traceloop:traceloop_dev@postgres:5432/traceloop
+      DATABASE_URL: postgresql+asyncpg://traceloop:${POSTGRES_PASSWORD:-traceloop_dev}@postgres:5432/traceloop
       REDIS_URL: redis://redis:6379/0
-      SERVER_PORT: "8000"
-      DEBUG: "true"
+      API_KEY: ${API_KEY:-dev-api-key-change-in-production}
+      DEBUG: "false"
       MOCK_LLM_URL: http://mock-llm:9876
+      LLM_BASE_URL: ${LLM_BASE_URL:-http://mock-llm:9876}
+      LLM_API_KEY: ${LLM_API_KEY:-}
+      JUDGE_API_KEY: ${JUDGE_API_KEY:-}
+      JUDGE_BASE_URL: ${JUDGE_BASE_URL:-https://api.deepseek.com}
+      JUDGE_MODEL: ${JUDGE_MODEL:-deepseek-chat}
     depends_on:
       postgres:
         condition: service_healthy
       redis:
         condition: service_healthy
-    volumes:
-      - ./app:/app/app:ro
-    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
-
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/ready')"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
   mock-llm:
     build: .
-    container_name: traceloop-mock-llm
-    ports:
-      - "9876:9876"
-    environment:
-      MOCK_LLM_PORT: "9876"
     command: uvicorn app.services.mock_llm:app --host 0.0.0.0 --port 9876
-
+  frontend:
+    build: ./frontend
+    ports:
+      - "127.0.0.1:3000:3000"
+    environment:
+      HOSTNAME: 0.0.0.0
+      TRACELOOP_API_URL: http://api:8000
+      TRACELOOP_API_KEY: ${API_KEY:-dev-api-key-change-in-production}
+    depends_on:
+      api:
+        condition: service_healthy
 volumes:
   pgdata:
+  redisdata:
