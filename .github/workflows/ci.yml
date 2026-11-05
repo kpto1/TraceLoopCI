@@ -72,5 +72,24 @@ jobs:
       - run: docker compose build
       - run: docker compose up -d --wait --wait-timeout 120
       - run: curl --fail http://localhost:3000/ && curl --fail http://localhost:8000/ready
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - uses: pnpm/action-setup@v4
+        with:
+          version: '11.25.0'
+      - name: Browser end-to-end acceptance
+        working-directory: frontend
+        run: |
+          pnpm install --frozen-lockfile
+          pnpm exec playwright install --with-deps chromium
+          pnpm exec playwright test
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: browser-acceptance
+          path: |
+            frontend/playwright-report
+            frontend/test-results
       - if: always()
         run: docker compose logs && docker compose down

@@ -1,5 +1,7 @@
 from unittest.mock import AsyncMock, MagicMock, patch
 
+import pytest
+
 
 class TestKeywordEval:
     async def test_all_keywords_found(self):
@@ -141,8 +143,8 @@ class TestLLMJudge:
     async def test_parse_fallback_chinese(self):
         from app.services.evaluators.llm_judge import _parse_judge_output
 
-        r = _parse_judge_output("我认为可以给7分，回答基本正确")
-        assert r["score"] == 7
+        with pytest.raises(ValueError):
+            _parse_judge_output("我认为可以给7分，回答基本正确")
 
 
 class TestDatasetAPI:

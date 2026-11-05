@@ -25,3 +25,6 @@ coverage.xml
 .ruff_cache/
 *.tsbuildinfo
 eval_report.json
+
+playwright-report/
+test-results/

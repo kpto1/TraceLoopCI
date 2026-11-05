@@ -36,7 +36,7 @@ services:
       LLM_API_KEY: ${LLM_API_KEY:-}
       JUDGE_API_KEY: ${JUDGE_API_KEY:-}
       JUDGE_BASE_URL: ${JUDGE_BASE_URL:-https://api.deepseek.com}
-      JUDGE_MODEL: ${JUDGE_MODEL:-deepseek-chat}
+      JUDGE_MODEL: ${JUDGE_MODEL:-deepseek-flash}
     depends_on:
       postgres:
         condition: service_healthy

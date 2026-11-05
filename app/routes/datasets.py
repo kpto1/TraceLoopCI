@@ -172,7 +172,7 @@ async def trigger_eval(
     if not dataset_id:
         raise HTTPException(status_code=400, detail="dataset_id required")
 
-    model = data.get("model", "deepseek-chat")
+    model = data.get("model", "deepseek-flash")
     is_baseline = data.get("is_baseline", False)
 
     report = await run_eval(

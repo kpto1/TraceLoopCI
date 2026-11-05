@@ -5,10 +5,11 @@ from typing import Optional
 import httpx
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.config import LLM_API_KEY, LLM_BASE_URL
+from app.config import EVAL_MAX_TOKENS, LLM_API_KEY, LLM_BASE_URL
 from app.models.golden import EvalRun, GoldenCase
 from app.services.gate import evaluate_output
 from app.services.gate import report as build_report
+from app.services.model_options import evaluation_options
 
 logger = logging.getLogger("traceloop.eval")
 
@@ -16,7 +17,7 @@ logger = logging.getLogger("traceloop.eval")
 async def run_eval(
     session: AsyncSession,
     dataset_id: int,
-    model: str = "deepseek-chat",
+    model: str = "deepseek-flash",
     llm_target_url: Optional[str] = None,
     is_baseline: bool = False,
     baseline_run_id: int | None = None,
@@ -124,6 +125,7 @@ async def _eval_one(client, target_url, model, case, require_real_judge=True) ->
                 ),
                 "temperature": 0,
                 "stream": False,
+                **evaluation_options(target_url, EVAL_MAX_TOKENS),
             },
             headers={"Authorization": f"Bearer {LLM_API_KEY}"} if LLM_API_KEY else {},
         )

@@ -5,6 +5,8 @@ os.environ.setdefault(
 )
 os.environ["API_KEY"] = ""
 os.environ["DEBUG"] = "false"
+os.environ["JUDGE_API_KEY"] = ""
+os.environ["LLM_API_KEY"] = ""
 
 import pytest
 from httpx import ASGITransport, AsyncClient

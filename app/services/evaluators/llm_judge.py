@@ -5,6 +5,7 @@ import re
 import httpx
 
 from app.config import JUDGE_API_KEY, JUDGE_BASE_URL, JUDGE_MODEL
+from app.services.model_options import evaluation_options
 
 logger = logging.getLogger("traceloop.judge")
 
@@ -60,7 +61,7 @@ async def evaluate(golden_case: dict, model_output: str) -> dict:
                         {"role": "user", "content": prompt},
                     ],
                     "temperature": 0,
-                    "max_tokens": 200,
+                    **evaluation_options(JUDGE_BASE_URL, 512),
                 },
             )
             resp.raise_for_status()
@@ -69,7 +70,7 @@ async def evaluate(golden_case: dict, model_output: str) -> dict:
             result = _parse_judge_output(content)
 
     except Exception as e:
-        logger.warning("Judge call failed: %s — falling back to mock", e)
+        logger.warning("Judge call failed (%s)", type(e).__name__)
         return {
             "eval_type": "llm_judge",
             "passed": False,
@@ -98,37 +99,16 @@ async def evaluate(golden_case: dict, model_output: str) -> dict:
 
 
 def _parse_judge_output(text: str) -> dict:
-    # Try direct JSON parse
-    try:
-        data = json.loads(text)
-        return {"score": int(data["score"]), "reason": data.get("reason", "")}
-    except (json.JSONDecodeError, KeyError, ValueError):
-        pass
-
-    # Try to extract JSON from markdown block
-    m = re.search(r"```(?:json)?\s*\n?(.*?)\n?```", text, re.DOTALL)
-    if m:
-        try:
-            data = json.loads(m.group(1))
-            return {"score": int(data["score"]), "reason": data.get("reason", "")}
-        except (json.JSONDecodeError, KeyError, ValueError):
-            pass
-
-    # Regex fallback: find "score": <number> or <number>分
-    m = re.search(r'"score"\s*:\s*(\d+)', text)
-    if m:
-        return {"score": int(m.group(1)), "reason": text[:100]}
-
-    m = re.search(r"(\d+)\s*分", text)
-    if m:
-        return {"score": int(m.group(1)), "reason": text[:100]}
-
-    # Last resort: find any number 0-10
-    numbers = re.findall(r"\b([0-9]|10)\b", text)
-    if numbers:
-        return {"score": int(numbers[0]), "reason": text[:100]}
-
-    return {"score": 5, "reason": "无法解析裁判输出"}
+    candidate = text.strip()
+    block = re.fullmatch(r"```(?:json)?\s*(.*?)\s*```", candidate, re.DOTALL)
+    if block:
+        candidate = block.group(1)
+    data = json.loads(candidate)
+    if not isinstance(data, dict) or type(data.get("score")) is not int:
+        raise ValueError("Judge score must be a JSON integer")
+    if not 0 <= data["score"] <= 10 or not isinstance(data.get("reason"), str):
+        raise ValueError("Invalid judge score or reason")
+    return data
 
 
 def _mock_judge(golden_case: dict, model_output: str) -> dict:

@@ -73,7 +73,7 @@ class CaseInput(Payload):
 
 class EvalInput(Payload):
     dataset_id: int | None = Field(default=None, gt=0)
-    model: str = Field(default="deepseek-chat", max_length=64)
+    model: str = Field(default="deepseek-flash", max_length=64)
     is_baseline: bool = False
     baseline_run_id: int | None = Field(default=None, gt=0)
     require_real_judge: bool = True
