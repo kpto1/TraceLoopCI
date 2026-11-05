@@ -29,6 +29,13 @@ test('server-side proxy authenticates upstream and rejects invalid routes/origin
   assert.equal((await response.text()).includes('server-only-test-key'), false);
   assert.equal((await route.GET(request(), { params: Promise.resolve({ path: ['v1', '..', 'health'] }) })).status, 404);
   assert.equal((await route.POST(request('POST', 'https://other.example'), { params: Promise.resolve({ path: ['v1', 'datasets'] }) })).status, 403);
+  const containerRequest = request('POST');
+  containerRequest.nextUrl = new URL('http://0.0.0.0:3000/api/backend/v1/datasets');
+  containerRequest.headers.set('host', 'localhost:3000');
+  assert.equal((await route.POST(containerRequest, { params: Promise.resolve({ path: ['v1', 'datasets'] }) })).status, 200);
+  containerRequest.headers.set('origin', 'https://attacker.example');
+  containerRequest.headers.set('x-forwarded-host', 'attacker.example');
+  assert.equal((await route.POST(containerRequest, { params: Promise.resolve({ path: ['v1', 'datasets'] }) })).status, 403);
   global.fetch = async () => { throw new Error('connection failed'); };
   assert.equal((await route.GET(request(), { params: Promise.resolve({ path: ['v1', 'traces'] }) })).status, 502);
 });

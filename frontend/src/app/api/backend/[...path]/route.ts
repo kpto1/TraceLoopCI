@@ -8,7 +8,11 @@ async function forward(request: NextRequest, context: { params: Promise<{ path: 
     return Response.json({ detail: "Not found" }, { status: 404 });
   }
   const origin = request.headers.get("origin");
-  if (request.method !== "GET" && origin && origin !== request.nextUrl.origin) {
+  // Standalone containers bind 0.0.0.0; nextUrl may contain that internal host.
+  // Host is supplied by the browser, whereas forwarded headers are not trusted here.
+  const publicOrigin = process.env.TRACELOOP_PUBLIC_URL
+    || new URL(`${request.nextUrl.protocol}//${request.headers.get("host") || request.nextUrl.host}`).origin;
+  if (request.method !== "GET" && origin && origin !== publicOrigin) {
     return Response.json({ detail: "Invalid origin" }, { status: 403 });
   }
   const base = process.env.TRACELOOP_API_URL || "http://127.0.0.1:8000";

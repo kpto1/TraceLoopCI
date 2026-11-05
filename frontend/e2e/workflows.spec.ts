@@ -44,12 +44,12 @@ test('create dataset, promote trace, compare baseline and inspect history', asyn
 test('invalid JSON and invalid dataset names show errors', async ({ page }) => {
   await page.goto('/datasets');
   await page.getByRole('button', { name: '创建数据集' }).click();
-  await expect(page.getByRole('alert')).toBeVisible();
+  await expect(page.locator('p[role=alert]')).toBeVisible();
   await page.getByLabel('名称', { exact: true }).fill(`invalid-${Date.now()}`);
   await page.getByRole('button', { name: '创建数据集' }).click();
   await page.getByLabel('用例 JSON').fill('{invalid');
   await page.getByRole('button', { name: '保存用例' }).click();
-  await expect(page.getByRole('alert')).toContainText('SyntaxError');
+  await expect(page.locator('p[role=alert]')).toContainText('SyntaxError');
 });
 
 test('backend failure is visible to the user', async ({ page }) => {
@@ -57,5 +57,5 @@ test('backend failure is visible to the user', async ({ page }) => {
     status: 502, contentType: 'application/json', body: JSON.stringify({ detail: 'Backend unavailable or timed out' }),
   }));
   await page.goto('/datasets');
-  await expect(page.getByRole('alert')).toContainText('Backend unavailable');
+  await expect(page.locator('p[role=alert]')).toContainText('Backend unavailable');
 });
