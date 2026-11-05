@@ -1,4 +1,4 @@
-const BASE = "http://localhost:8000";
+const BASE = "/api/backend";
 
 export interface Trace {
   trace_id: string;

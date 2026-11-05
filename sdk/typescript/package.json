@@ -1,18 +1,30 @@
 {
   "name": "trace-loop-ci",
   "version": "0.1.0",
-  "description": "TraceLoop CI — TypeScript SDK for LLM behavioral regression testing",
+  "description": "TraceLoop CI \u2014 TypeScript SDK for LLM behavioral regression testing",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
-  "files": ["dist"],
+  "files": [
+    "dist"
+  ],
   "scripts": {
     "build": "tsc",
-    "test": "jest"
+    "test": "pnpm build && node --test tests/*.cjs"
   },
-  "keywords": ["llm", "testing", "evaluation", "ci", "regression"],
+  "keywords": [
+    "llm",
+    "testing",
+    "evaluation",
+    "ci",
+    "regression"
+  ],
   "license": "MIT",
   "devDependencies": {
     "@types/node": "^20.0.0",
     "typescript": "^5.0.0"
+  },
+  "packageManager": "pnpm@11.25.0",
+  "engines": {
+    "node": ">=22"
   }
 }

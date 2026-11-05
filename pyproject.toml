@@ -1,20 +1,20 @@
 [build-system]
-requires = ["setuptools>=68.0"]
+requires = ["setuptools>=77.0"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "trace-loop-ci"
+name = "traceloopci-server"
 version = "0.1.0"
 description = "LLM behavioral regression testing platform"
 readme = "README.md"
-requires-python = ">=3.10"
-license = { text = "MIT" }
+requires-python = ">=3.12"
+license = "MIT"
 authors = [
     { name = "TraceLoop CI Contributors" },
 ]
 
 dependencies = [
-    "fastapi[standard]>=0.115.0",
+    "fastapi>=0.115.0",
     "uvicorn[standard]>=0.32.0",
     "sqlalchemy[asyncio]>=2.0.36",
     "asyncpg>=0.30.0",
@@ -30,7 +30,11 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = [
-    "pytest>=8.3.0",
+    "aiosqlite>=0.22.1,<1",
+    "fakeredis>=2.34,<3",
+    "build>=1.2,<2",
+    "pip-tools>=7.4,<8",
+    "pytest>=8.3.0,<10",
     "pytest-asyncio>=0.24.0",
     "pytest-cov>=6.0.0",
     "black>=24.0.0",
@@ -45,7 +49,8 @@ target-version = ["py312"]
 [tool.ruff]
 line-length = 100
 target-version = "py312"
-select = ["E", "F", "I", "N", "W", "UP"]
+[tool.ruff.lint]
+select = ["E4", "E7", "E9", "F", "I"]
 
 [tool.mypy]
 python_version = "3.12"
@@ -58,4 +63,5 @@ asyncio_default_fixture_loop_scope = "function"
 testpaths = ["tests"]
 
 [tool.setuptools.packages.find]
-where = ["app"]
+where = ["."]
+include = ["app*"]

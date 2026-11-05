@@ -1,10 +1,10 @@
 from datetime import datetime, timezone
 from typing import Optional
 
-from sqlalchemy import select, func
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.trace import Trace, Span
+from app.models.trace import Span, Trace
 from app.services.trace_writer import enqueue_trace
 
 
@@ -12,6 +12,7 @@ async def create_trace(
     session: AsyncSession,
     *,
     user_input: str,
+    trace_id: Optional[str] = None,
     model: str,
     model_output: Optional[str] = None,
     system_prompt: Optional[str] = None,
@@ -32,6 +33,7 @@ async def create_trace(
     spans: Optional[list[dict]] = None,
 ) -> Trace:
     trace = Trace(
+        **({"trace_id": trace_id} if trace_id else {}),
         user_input=user_input,
         model=model,
         model_output=model_output,
@@ -57,28 +59,34 @@ async def create_trace(
 
     if spans:
         for s in spans:
-            session.add(Span(
-                trace_id_fk=trace.id,
-                span_type=s.get("span_type", "unknown"),
-                name=s.get("name"),
-                parent_span_id=s.get("parent_span_id"),
-                input_data=s.get("input_data"),
-                output_data=s.get("output_data"),
-                started_at=s.get("started_at"),
-                ended_at=s.get("ended_at"),
-                duration_ms=s.get("duration_ms"),
-                tokens_used=s.get("tokens_used", 0),
-                cost=s.get("cost", 0.0),
-                status=s.get("status", "success"),
-                error_message=s.get("error_message"),
-                metadata_extra=s.get("metadata_extra", {}),
-            ))
+            if hasattr(s, "model_dump"):
+                s = s.model_dump()
+            session.add(
+                Span(
+                    trace_id_fk=trace.id,
+                    span_type=s.get("span_type", "unknown"),
+                    name=s.get("name"),
+                    parent_span_id=s.get("parent_span_id"),
+                    input_data=s.get("input_data"),
+                    output_data=s.get("output_data"),
+                    started_at=s.get("started_at"),
+                    ended_at=s.get("ended_at"),
+                    duration_ms=s.get("duration_ms"),
+                    tokens_used=s.get("tokens_used", 0),
+                    cost=s.get("cost", 0.0),
+                    status=s.get("status", "success"),
+                    error_message=s.get("error_message"),
+                    metadata_extra=s.get("metadata_extra", {}),
+                )
+            )
 
     await session.commit()
     return trace
 
 
 async def create_trace_async(data: dict) -> dict:
+    if hasattr(data, "model_dump"):
+        data = data.model_dump(mode="json", exclude_none=True)
     trace_id = await enqueue_trace(data)
     return {"status": "received", "trace_id": trace_id}
 
@@ -102,18 +110,15 @@ async def get_traces(
 
 
 async def get_trace_by_id(session: AsyncSession, trace_id: str) -> Optional[Trace]:
-    result = await session.execute(
-        select(Trace).where(Trace.trace_id == trace_id)
-    )
+    result = await session.execute(select(Trace).where(Trace.trace_id == trace_id))
     return result.scalar_one_or_none()
 
 
 async def get_trace_with_spans(session: AsyncSession, trace_id: str) -> Optional[Trace]:
     from sqlalchemy.orm import selectinload
+
     result = await session.execute(
-        select(Trace)
-        .options(selectinload(Trace.spans))
-        .where(Trace.trace_id == trace_id)
+        select(Trace).options(selectinload(Trace.spans)).where(Trace.trace_id == trace_id)
     )
     return result.scalar_one_or_none()
 

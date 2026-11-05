@@ -1,9 +1,7 @@
 """pytest plugin: automatically records LLM calls during test runs."""
 
-import time
-import json
-import pytest
 import httpx
+import pytest
 
 
 def pytest_addoption(parser):
@@ -30,15 +28,8 @@ class TraceRecorder:
         self.url = config.getoption("--traceloop-url", "http://localhost:8000")
         self.key = config.getoption("--traceloop-key", "")
         self.project = config.getoption("--traceloop-project", "default")
-        self._client = None
-
-    async def _get_client(self):
-        if self._client is None:
-            self._client = httpx.AsyncClient(timeout=30.0)
-        return self._client
 
     async def record(self, input_text, model_output, model="unknown", **kwargs):
-        client = await self._get_client()
         payload = {
             "user_input": input_text,
             "model_output": model_output,
@@ -47,11 +38,12 @@ class TraceRecorder:
             **kwargs,
         }
         try:
-            resp = await client.post(
-                f"{self.url}/v1/traces",
-                json=payload,
-                headers={"X-API-Key": self.key} if self.key else {},
-            )
+            async with httpx.AsyncClient(timeout=30.0) as client:
+                resp = await client.post(
+                    f"{self.url}/v1/traces",
+                    json=payload,
+                    headers={"X-API-Key": self.key} if self.key else {},
+                )
             if resp.status_code != 200:
                 print(f"[traceloop] Record failed: {resp.status_code}")
         except Exception as e:

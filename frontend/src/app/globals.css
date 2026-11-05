@@ -144,3 +144,5 @@ dl.grid dd {
   font-family: "SF Mono", "Fira Code", "Cascadia Code", monospace;
   font-size: 13px;
 }
+
+input, select, textarea, button { background: #18181b; color: #fafafa; border: 1px solid #71717a; padding: .5rem; border-radius: .3rem; margin: .3rem; } label { display: block; } button { cursor: pointer; } button:disabled { opacity: .5; } :focus-visible { outline: 2px solid #93c5fd; outline-offset: 2px; }

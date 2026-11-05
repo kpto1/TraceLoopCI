@@ -1,3 +1,5 @@
+> 历史设计记录。当前已实现能力以 [架构概览](../overview.md) 和根 README 为准。
+
 # ADR 003: 为什么选 Redis Streams 不用 Kafka
 
 **日期**: 2026-06-28  

@@ -1,13 +1,13 @@
-from setuptools import setup, find_packages
+from setuptools import find_packages, setup
 
 setup(
     name="trace-loop-ci",
     version="0.1.0",
     description="TraceLoop CI — pytest plugin for LLM behavioral regression testing",
-    long_description=open("README.md").read(),
+    long_description=open("README.md", encoding="utf-8").read(),
     long_description_content_type="text/markdown",
     author="TraceLoop CI Contributors",
-    url="https://github.com/traceloop-ci/traceloop-ci",
+    url="https://github.com/kpto1/TraceLoopCI",
     packages=find_packages(),
     python_requires=">=3.10",
     install_requires=[

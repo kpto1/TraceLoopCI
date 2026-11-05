@@ -13,8 +13,7 @@
 name: TraceLoop CI Check
 
 on:
-  pull_request:
-    types: [opened, synchronize, reopened]
+  workflow_dispatch:
 
 permissions:
   pull-requests: write
@@ -47,21 +46,24 @@ jobs:
           url = os.environ['TRACELOOP_API_URL']
           key = os.environ['TRACELOOP_API_KEY']
           ds = os.environ['TRACELOOP_DATASET_ID']
+          if not url or not key or not ds:
+              sys.exit('Configure TRACELOOP_API_URL, TRACELOOP_API_KEY and TRACELOOP_DATASET_ID first')
           resp = httpx.post(f'{url}/v1/eval/run', json={
               'dataset_id': int(ds), 'model': 'deepseek-chat', 'is_baseline': False
           }, headers={'X-API-Key': key}, timeout=600)
+          resp.raise_for_status()
           data = resp.json()
           print(json.dumps(data, indent=2))
           with open('eval_report.json', 'w') as f:
               json.dump(data, f)
-          if data.get('overall_score', 100) < 80:
+          if not data.get('gate_passed', False):
               print('FAIL: overall_score below 80')
               sys.exit(1)
           print(f'OK: score={data[\"overall_score\"]}% ({data[\"passed\"]}/{data[\"total_cases\"]} passed)')
           "
 
       - name: Post PR comment
-        if: always()
+        if: always() && github.event_name == 'pull_request'
         uses: actions/github-script@v7
         with:
           script: |

@@ -1,105 +1,33 @@
-# 生产环境部署注意事项
+# 运维与升级
 
-> 这不是那种"企业级 12 因素"废话文档。真实团队的心得。
+这是单可信工作区服务。API Key 持有者拥有整个工作区的访问权限，project_id 不提供隔离。Dashboard 必须保持本机访问，或放在带身份认证、TLS、限流的反向代理后；不能把无登录 Dashboard 直接暴露公网。
 
-## 用托管 PostgreSQL，别自己容器化
+## 升级
 
-docker-compose 里的 PostgreSQL 只适合开发。生产环境用托管服务：
+1. 备份 PostgreSQL 并验证能恢复。不要执行 `docker compose down -v`，该命令会删除数据卷。
+2. 更新代码与镜像。API 启动前自动执行 `alembic upgrade head`；原始数据库的表会被迁移 0001 接管，0002 添加可空 messages/system_prompt 字段。
+3. 检查 `/ready`；`/health` 仅表示进程存活。回滚应用前核实 schema 兼容性；迁移禁用破坏性 downgrade。
+4. 首次升级建议停写后执行一次迁移。多副本部署应将迁移拆为一次性 job，避免并发迁移。
 
-- **Supabase**：免费额度够用，pgvector 内置。10K traces/天完全免费。
-- **Railway**：一键部署，自动备份，有 pgvector。
-- **AWS RDS / Aurora**：如果你们已经在 AWS 上。
+## 队列
 
-**不推荐**自己维护容器 PostgreSQL 的原因：
-- 备份恢复要自己写 cron
-- 内存/磁盘监控要自己搞
-- 故障恢复也是你的活
+Redis 使用 AOF 与持久化卷。API 生命周期启动消费者。消息落库后 ACK 并删除；失败消息停留 pending，10 秒闲置后重领。幂等约束为 trace_id。无法解析/验证的消息原样保留在 `traceloop:traces:dead`，需要人工检查；不要盲目删除。不要独立添加同名消费组来归档同一 stream，因为确认后删除是单消费组设计。
 
-## API 密钥
+这是 at-least-once 策略，不承诺在磁盘故障、Redis 数据丢失或所有持久化目标不可用时零数据损失。监控 backlog、dead stream、Redis 磁盘和数据库容量。
 
-```env
-# 开发环境
-API_KEY=dev-api-key-change-in-production
+## 数据与凭证
 
-# 生产环境 —— 用足够长的随机字符串
-API_KEY=$(openssl rand -hex 32)
-# 结果类似：a7d8f3c2e1b4a9c6d5e2f1b8a3c4d7e6f9a8b1c2d3e4f5a6b7c8d9e0f1a2b3c4
-```
+Trace、消息、Span、用例、报告可能包含业务敏感信息。写入前在业务应用做脱敏，仅采集授权数据；限制网络、Key 分发、备份访问。DEBUG 默认关闭；API 不返回内部数据库异常。没有内置 RBAC 或多租户。
 
-SDK 和 curl 请求都需要传 `X-API-Key` 头。
-
-## 反向代理（Nginx）
-
-如果要在公网暴露 API，用 Nginx 反代 + 可选的流式支持：
-
-```nginx
-server {
-    listen 443 ssl;
-    server_name traceloop.yourcompany.com;
-
-    location / {
-        proxy_pass http://127.0.0.1:8000;
-
-        # 流式响应必备
-        proxy_set_header Connection '';
-        proxy_http_version 1.1;
-        chunked_transfer_encoding on;
-        proxy_buffering off;
-        proxy_cache off;
-
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-    }
-}
-```
-
-`proxy_buffering off` 和 `chunked_transfer_encoding on` 这两行是关键 —— LLM 流式响应依赖它们。忘记加的话 SSE 会被 Nginx 缓存然后一次性吐出，前端等不到逐 token 效果。
-
-## 备份策略
-
-用托管数据库的话，一般自带自动备份。如果是自建：
+定期评估保留策略。以下命令默认只预览，添加 `--apply` 才删除过期 Trace/Span；不会删除用例或报告：
 
 ```bash
-# 每天凌晨 3 点备份，保留 7 天
-0 3 * * * pg_dump -U traceloop traceloop | gzip > /backups/traceloop-$(date +\%Y\%m\%d).sql.gz
-0 3 * * * find /backups -name "traceloop-*.sql.gz" -mtime +7 -delete
+python -m app.retention --days 30
+python -m app.retention --days 30 --apply
 ```
 
-备份内容包含 traces、golden datasets、eval runs。Redis 不备份（重启后从 DB 重新消费）。
+评测报告、黄金用例和 dead stream 需要单独的保留与审批策略。不要把 `.env`、数据库文件或报告上传公共仓库。
 
-## 资源估算
+## 发布边界
 
-| 日 trace 量 | 推荐配置 | 数据库存储 |
-|---|---|---|
-| < 1K | 1 vCPU, 1GB RAM | ~50MB/月 |
-| 10K | 1 vCPU, 2GB RAM | ~500MB/月 |
-| 100K | 2 vCPU, 4GB RAM | ~5GB/月 |
-| 1M+ | 考虑扩容读写分离 | ~50GB/月 |
-
-以上是保守估计，单条 trace 平均 ~500 字节（含 metadata 和 spans）。
-
-## 监控
-
-最低限度：
-
-```bash
-# 资源监控
-docker stats traceloopci-api
-
-# 应用日志 —— 重点关注
-docker compose logs api | grep -E "ERROR|WARNING"
-
-# API 响应 —— 正常应 < 50ms（不包括 LLM 代理耗时）
-curl -o /dev/null -s -w "%{time_total}\n" http://localhost:8000/health
-```
-
-建议监控项：
-- `GET /health` 返回非 200 -> 告警
-- Redis 消费者组积压（`XLEN traceloop:traces` > 1000）-> trace 写入跟不上
-- PostgreSQL 连接数（默认 pool 20）-> 接近上限说明需要调整 pool_size
-
-## 不推荐的事情
-
-- **不要**把前端和后端部署在同一端口下。前端是 Next.js 静态站，后端是 FastAPI。分开部署或反代。
-- **不要**在生产开 `--reload`。它热重载很香，但会泄露源码路径到错误信息里。
-- **不要**在生产用 Mock LLM。那是开发调试用的。
+GitHub required status checks 由仓库管理员配置。真实裁判/模型密钥由部署环境管理，不能把有写权限的密钥注入不可信 PR。默认 PR 示例工作流不使用任何模型密钥，明确标记 heuristic demo。正式业务回归建议在隔离 runner、受限模型代理和经审批的代码上运行。

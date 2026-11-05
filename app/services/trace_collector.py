@@ -1,12 +1,10 @@
-import time
 import json
-import uuid
 import logging
+import time
+import uuid
 from typing import Optional
 
 import httpx
-
-from app.config import MOCK_LLM_URL
 
 logger = logging.getLogger("traceloop.collector")
 
@@ -54,7 +52,8 @@ async def proxy_llm_call(
 
     # Prepare forwarding headers (strip host, keep auth)
     fwd_headers = {
-        k: v for k, v in headers.items()
+        k: v
+        for k, v in headers.items()
         if k.lower() not in ("host", "content-length", "transfer-encoding")
     }
 
@@ -73,7 +72,9 @@ async def proxy_llm_call(
         if stream:
             result = await _proxy_stream(client, target_url, fwd_headers, body, trace_data, t_start)
         else:
-            result = await _proxy_non_stream(client, target_url, fwd_headers, body, trace_data, t_start)
+            result = await _proxy_non_stream(
+                client, target_url, fwd_headers, body, trace_data, t_start
+            )
         return result
     except httpx.TimeoutException:
         elapsed = (time.monotonic() - t_start) * 1000
@@ -99,13 +100,15 @@ async def _proxy_non_stream(client, url, headers, body, trace_data, t_start):
     if resp_json and "choices" in resp_json:
         output = resp_json["choices"][0].get("message", {}).get("content", "")
         usage = resp_json.get("usage", {})
-        trace_data.update({
-            "model_output": output,
-            "tokens_prompt": usage.get("prompt_tokens", 0),
-            "tokens_completion": usage.get("completion_tokens", 0),
-            "tokens_total": usage.get("total_tokens", 0),
-            "latency_ms": int(elapsed),
-        })
+        trace_data.update(
+            {
+                "model_output": output,
+                "tokens_prompt": usage.get("prompt_tokens", 0),
+                "tokens_completion": usage.get("completion_tokens", 0),
+                "tokens_total": usage.get("total_tokens", 0),
+                "latency_ms": int(elapsed),
+            }
+        )
     else:
         trace_data["status"] = "error"
         trace_data["error_message"] = f"Upstream returned {response.status_code}"
@@ -149,14 +152,16 @@ async def _proxy_stream(client, url, headers, body, trace_data, t_start):
     output_text = "".join(full_output)
 
     if status_code == 200:
-        trace_data.update({
-            "model_output": output_text,
-            "tokens_prompt": final_usage.get("prompt_tokens", 0),
-            "tokens_completion": final_usage.get("completion_tokens", 0),
-            "tokens_total": final_usage.get("total_tokens", 0),
-            "latency_ms": int(total_ms),
-            "ttft_ms": int(ttft_ms) if ttft_ms else None,
-        })
+        trace_data.update(
+            {
+                "model_output": output_text,
+                "tokens_prompt": final_usage.get("prompt_tokens", 0),
+                "tokens_completion": final_usage.get("completion_tokens", 0),
+                "tokens_total": final_usage.get("total_tokens", 0),
+                "latency_ms": int(total_ms),
+                "ttft_ms": int(ttft_ms) if ttft_ms else None,
+            }
+        )
     else:
         trace_data["status"] = "error"
         trace_data["error_message"] = f"Stream returned {status_code}"

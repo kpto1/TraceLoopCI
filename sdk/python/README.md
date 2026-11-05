@@ -13,6 +13,7 @@ pip install trace-loop-ci
 ```python
 import pytest
 
+
 @pytest.mark.asyncio
 async def test_llm_response(trace_loop):
     # Your LLM call here

@@ -52,6 +52,7 @@ export async function recordTrace(
       method: "POST",
       headers,
       body: JSON.stringify(payload),
+      signal: AbortSignal.timeout(10000),
     });
 
     if (!resp.ok) {
@@ -68,12 +69,15 @@ export function traceLoop(model: string) {
     descriptor.value = async function (...args: any[]) {
       const input = JSON.stringify(args);
       const t0 = Date.now();
-      const result = await original.apply(this, args);
-      const output = typeof result === "string" ? result : JSON.stringify(result);
-      const latency = Date.now() - t0;
-
-      await recordTrace(input, output, model, { latency_ms: latency });
-      return result;
+      try {
+        const result = await original.apply(this, args);
+        const output = typeof result === "string" ? result : JSON.stringify(result);
+        await recordTrace(input, output, model, { latency_ms: Date.now() - t0 });
+        return result;
+      } catch (error) {
+        await recordTrace(input, "", model, { latency_ms: Date.now() - t0, status: "error" });
+        throw error;
+      }
     };
     return descriptor;
   };

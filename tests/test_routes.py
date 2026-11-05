@@ -1,6 +1,4 @@
 """Additional route tests to push coverage over 70%."""
-import pytest
-from unittest.mock import AsyncMock, patch, MagicMock
 
 
 class TestTraceRoutesExtra:
@@ -21,9 +19,9 @@ class TestTraceRoutesExtra:
         assert data["limit"] == 50
 
     async def test_trace_by_id_without_spans(self, client):
-        cr = await client.post("/v1/traces", json={
-            "user_input": "test", "model_output": "ok", "model": "m"
-        })
+        cr = await client.post(
+            "/v1/traces", json={"user_input": "test", "model_output": "ok", "model": "m"}
+        )
         tid = cr.json()["trace_id"]
         r = await client.get(f"/v1/traces/{tid}", params={"include_spans": False})
         assert r.status_code == 200
